@@ -302,17 +302,25 @@ function Download-Task([string]$Id, [string]$Target) {
     $task = Get-Task $Id
     $state = ([string](Get-PropertyValue $task 'status')).ToLowerInvariant()
     if ($state -ne 'completed') { throw "任务尚未完成，当前状态：$state" }
-    $content = Resolve-ContentUrl (Get-TaskContentUrl $task)
-    if ([string]::IsNullOrWhiteSpace($content)) { throw '任务已完成但没有可下载的视频地址。' }
+    # Never trust an upstream content_url with the user's gateway API Key.
+    # The authenticated gateway route owns the download and may cache upstream media.
+    $content = Get-ApiUri "/videos/$([Uri]::EscapeDataString($Id))/content"
     $destination = if ([string]::IsNullOrWhiteSpace($Target)) { Get-DefaultOutputPath $Id } else { [IO.Path]::GetFullPath($Target) }
     $parent = Split-Path -Parent $destination
     if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
     $temp = "$destination.part"
     try {
-        $downloadRequest = @{ Uri = $content; Headers = (Get-CommonHeaders); UseBasicParsing = $true; TimeoutSec = 120; OutFile = $temp }
+        $downloadRequest = @{ Uri = $content; Headers = (Get-CommonHeaders); UseBasicParsing = $true; TimeoutSec = 120; OutFile = $temp; MaximumRedirection = 0 }
         $downloadUri = [Uri]$content
         if ($downloadUri.Host -in @('127.0.0.1', 'localhost', '::1')) { $downloadRequest.Proxy = $null }
         Invoke-WebRequest @downloadRequest
+        $stream = [IO.File]::OpenRead($temp)
+        try {
+            $header = [byte[]]::new(8)
+            if ($stream.Read($header, 0, 8) -ne 8 -or [Text.Encoding]::ASCII.GetString($header, 4, 4) -ne 'ftyp') {
+                throw '网关未返回有效 MP4 文件。'
+            }
+        } finally { $stream.Dispose() }
         Move-Item -LiteralPath $temp -Destination $destination -Force
     } catch {
         Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
@@ -325,7 +333,9 @@ try {
     switch ($Action) {
         'doctor' {
             $health = Invoke-AiworkJson -Method GET -Uri (Get-HealthUri)
-            Write-Result ([pscustomobject]@{ ok = $true; gateway = (Get-ConfiguredBaseUrl); health = $health })
+            $models = Invoke-AiworkJson -Method GET -Uri (Get-ApiUri '/models')
+            $available = @(Get-PropertyValue $models 'data')
+            Write-Result ([pscustomobject]@{ ok = $true; gateway = (Get-ConfiguredBaseUrl); health = $health; model_count = $available.Count })
         }
         'upload' {
             if (-not $AssetPath) { throw 'upload 需要 -AssetPath。' }

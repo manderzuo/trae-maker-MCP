@@ -19,8 +19,8 @@ reference files.
 3. Submit once and keep the returned `task_id`. Use status/wait for pending
    tasks; never resubmit merely because a poll is delayed.
 4. Download only after `completed`, using a temporary `.part` file and the
-   user's requested destination. Report the task ID, status, URL (when safe),
-   and local file path.
+   user's requested destination (or local Downloads by default). Report the
+   task ID, status and local file path; do not present a query URL as the result.
 5. Do not print or place `AIWORK_API_KEY`, JWTs, cookies, or authorization
    headers in prompts, logs, or generated files.
 
@@ -41,6 +41,11 @@ The logical operations are `seedance_submit`, `seedance_status`, and
 and `download`. `submit` returns immediately with a task ID. Use `wait` or repeated `status`
 calls for long jobs. Defaults are 5 seconds, 720p, and 16:9; pass `-Duration`,
 `-Resolution`, or `-Ratio` only when the user requests a different value.
+Omit `-OutputPath` to save the MP4 in the local `Downloads` directory.
+
+The bundled `mcp/server.mjs` exposes the same operations to MCP clients; see
+[`mcp/README.md`](mcp/README.md) when configuring MCP. A successful `doctor`
+checks both health and authenticated model access without generating a video.
 
 The first-time setup is `install.cmd` (or `scripts/install.ps1`). It installs
 this folder into the standard Agent Skills location and stores the gateway

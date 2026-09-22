@@ -14,6 +14,8 @@ cd skills/aiwork-seedance
 
 安装程序会在用户目录保存网关地址和加密后的 API Key；密钥不会写入仓库。
 也可以把该目录直接加入客户端的 skills 搜索路径。
+需要标准 MCP 接入的客户端，可使用 [`skills/aiwork-seedance/mcp/README.md`](skills/aiwork-seedance/mcp/README.md)
+中的 stdio 配置；它与脚本共用同一套网关配置。
 
 ## 支持
 
