@@ -72,8 +72,23 @@ function Get-ConfiguredBaseUrl {
     if ([string]::IsNullOrWhiteSpace($value)) {
         throw '未配置 AIWORK_GATEWAY_BASE_URL；请运行 install.cmd。'
     }
-    if ($value -notmatch '/v1$') { $value = "$value/v1" }
-    return $value.TrimEnd('/')
+    try { $uri = [Uri]$value } catch { throw 'AIWORK_GATEWAY_BASE_URL 必须是 http/https 地址。' }
+    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @('http', 'https')) {
+        throw 'AIWORK_GATEWAY_BASE_URL 必须是 http/https 地址。'
+    }
+    $path = $uri.AbsolutePath.TrimEnd('/')
+    if ($path -in @('/admin', '/admin/v1')) {
+        $path = '/v1'
+    } elseif ([string]::IsNullOrWhiteSpace($path) -or $path -eq '/') {
+        $path = '/v1'
+    } elseif ($path -notmatch '/v1$') {
+        $path = "$path/v1"
+    }
+    $builder = [UriBuilder]$uri
+    $builder.Path = $path
+    $builder.Query = ''
+    $builder.Fragment = ''
+    return $builder.Uri.AbsoluteUri.TrimEnd('/')
 }
 
 function Get-ConfiguredApiKey {
@@ -236,6 +251,14 @@ function Resolve-ContentUrl([string]$Value) {
     return "$origin$Value"
 }
 
+function Get-DefaultOutputPath([string]$Id) {
+    $profile = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $env:USERPROFILE } else { [Environment]::GetFolderPath('UserProfile') }
+    $safeId = [regex]::Replace([string]$Id, '[^A-Za-z0-9._-]+', '-').Trim('-')
+    if ([string]::IsNullOrWhiteSpace($safeId)) { $safeId = 'video' }
+    $name = "aiwork-seedance-{0}-{1}.mp4" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $safeId
+    return Join-Path (Join-Path $profile 'Downloads') $name
+}
+
 function Submit-Task {
     if ([string]::IsNullOrWhiteSpace($Prompt)) { throw 'Prompt 不能为空。' }
     $payload = @{
@@ -276,13 +299,12 @@ function Wait-Task([string]$Id) {
 }
 
 function Download-Task([string]$Id, [string]$Target) {
-    if ([string]::IsNullOrWhiteSpace($Target)) { throw 'OutputPath 不能为空。' }
     $task = Get-Task $Id
     $state = ([string](Get-PropertyValue $task 'status')).ToLowerInvariant()
     if ($state -ne 'completed') { throw "任务尚未完成，当前状态：$state" }
     $content = Resolve-ContentUrl (Get-TaskContentUrl $task)
     if ([string]::IsNullOrWhiteSpace($content)) { throw '任务已完成但没有可下载的视频地址。' }
-    $destination = [IO.Path]::GetFullPath($Target)
+    $destination = if ([string]::IsNullOrWhiteSpace($Target)) { Get-DefaultOutputPath $Id } else { [IO.Path]::GetFullPath($Target) }
     $parent = Split-Path -Parent $destination
     if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
     $temp = "$destination.part"
@@ -296,7 +318,7 @@ function Download-Task([string]$Id, [string]$Target) {
         Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
         throw "视频下载失败：$($_.Exception.Message)"
     }
-    return [pscustomobject]@{ task_id = $Id; status = 'completed'; content_url = $content; download_path = $destination }
+    return [pscustomobject]@{ task_id = $Id; status = 'completed'; download_path = $destination }
 }
 
 try {
@@ -323,9 +345,8 @@ try {
         }
         'generate' {
             $submitted = Submit-Task
-            $task = Wait-Task $submitted.task_id
-            if ($OutputPath) { Write-Result (Download-Task $submitted.task_id $OutputPath) }
-            else { Write-Result ([pscustomobject]@{ task_id = $submitted.task_id; status = 'completed'; content_url = (Resolve-ContentUrl (Get-TaskContentUrl $task)) }) }
+            [void](Wait-Task $submitted.task_id)
+            Write-Result (Download-Task $submitted.task_id $OutputPath)
         }
     }
     exit 0

@@ -12,8 +12,9 @@ install may provide `AIWORK_GATEWAY_BASE_URL` and `AIWORK_API_KEY` environment
 variables instead.
 
 Use `doctor` to verify the gateway, API key, account pool, and video capability
-without creating a task. The gateway base URL must end in `/v1`; the health
-endpoint is derived as `/health`.
+without creating a task. The gateway base URL is normalized to the public `/v1`
+API path; if `/admin` or `/admin/v1` is entered, it is corrected automatically.
+The health endpoint is derived as `/health`.
 
 For a client that does not discover Agent Skills automatically, add the skill
 directory to that client's skill search path or invoke the runner explicitly.

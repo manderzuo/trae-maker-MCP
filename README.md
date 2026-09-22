@@ -21,6 +21,7 @@ cd skills/aiwork-seedance
 - 本地 `image_paths` / `video_paths` 上传
 - 拖拽附件的 Base64/data URL 上传
 - 任务状态查询、轮询、幂等提交和 MP4 下载
+- `generate` 完成后自动下载到本机 `Downloads`；不再把查询地址作为最终结果
 - 本机、局域网和公网网关地址
 
 本地素材必须显式传入，不会扫描目录；不要把 API Key、JWT、Cookie 或本机账号数据提交到仓库。

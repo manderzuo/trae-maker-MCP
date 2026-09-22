@@ -19,7 +19,23 @@ function Save-Config {
     param([string]$BaseUrl, [string]$PlainKey)
     if ([string]::IsNullOrWhiteSpace($BaseUrl)) { throw '网关地址不能为空。' }
     $BaseUrl = $BaseUrl.Trim().TrimEnd('/')
-    if ($BaseUrl -notmatch '/v1$') { $BaseUrl = "$BaseUrl/v1" }
+    try { $uri = [Uri]$BaseUrl } catch { throw '网关地址必须是 http/https 地址。' }
+    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @('http', 'https')) {
+        throw '网关地址必须是 http/https 地址。'
+    }
+    $path = $uri.AbsolutePath.TrimEnd('/')
+    if ($path -in @('/admin', '/admin/v1')) {
+        $path = '/v1'
+    } elseif ([string]::IsNullOrWhiteSpace($path) -or $path -eq '/') {
+        $path = '/v1'
+    } elseif ($path -notmatch '/v1$') {
+        $path = "$path/v1"
+    }
+    $builder = [UriBuilder]$uri
+    $builder.Path = $path
+    $builder.Query = ''
+    $builder.Fragment = ''
+    $BaseUrl = $builder.Uri.AbsoluteUri.TrimEnd('/')
     if ([string]::IsNullOrWhiteSpace($PlainKey)) { throw 'API Key 不能为空。' }
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $secure = ConvertTo-SecureString -String $PlainKey -AsPlainText -Force
