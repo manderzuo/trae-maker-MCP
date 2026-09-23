@@ -8,6 +8,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'gateway-config.ps1')
 
 $sourceRoot = Split-Path -Parent $PSScriptRoot
 $defaultInstall = Join-Path (Join-Path $env:USERPROFILE '.agents\skills') 'aiwork-seedance'
@@ -18,24 +19,7 @@ $configPath = Join-Path $configDir 'seedance-skill.json'
 function Save-Config {
     param([string]$BaseUrl, [string]$PlainKey)
     if ([string]::IsNullOrWhiteSpace($BaseUrl)) { throw '网关地址不能为空。' }
-    $BaseUrl = $BaseUrl.Trim().TrimEnd('/')
-    try { $uri = [Uri]$BaseUrl } catch { throw '网关地址必须是 http/https 地址。' }
-    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @('http', 'https')) {
-        throw '网关地址必须是 http/https 地址。'
-    }
-    $path = $uri.AbsolutePath.TrimEnd('/')
-    if ($path -in @('/admin', '/admin/v1')) {
-        $path = '/v1'
-    } elseif ([string]::IsNullOrWhiteSpace($path) -or $path -eq '/') {
-        $path = '/v1'
-    } elseif ($path -notmatch '/v1$') {
-        $path = "$path/v1"
-    }
-    $builder = [UriBuilder]$uri
-    $builder.Path = $path
-    $builder.Query = ''
-    $builder.Fragment = ''
-    $BaseUrl = $builder.Uri.AbsoluteUri.TrimEnd('/')
+    $BaseUrl = Normalize-AiWorkGatewayBaseUrl -BaseUrl $BaseUrl
     if ([string]::IsNullOrWhiteSpace($PlainKey)) { throw 'API Key 不能为空。' }
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $secure = ConvertTo-SecureString -String $PlainKey -AsPlainText -Force
@@ -74,7 +58,12 @@ foreach ($known in $knownSkillRoots) {
 if (-not $SkipConfig) {
     if (-not $GatewayBaseUrl) { $GatewayBaseUrl = $env:AIWORK_GATEWAY_BASE_URL }
     if (-not $ApiKey) { $ApiKey = $env:AIWORK_API_KEY }
-    if (-not $GatewayBaseUrl) { $GatewayBaseUrl = Read-Host 'AI Work 网关地址（例如 https://example.com/v1）' }
+    if (-not $GatewayBaseUrl) {
+        $GatewayBaseUrl = Read-Host 'AI Work 网关地址（默认 https://api.gemstory.cn/v1）'
+        if ([string]::IsNullOrWhiteSpace($GatewayBaseUrl)) {
+            $GatewayBaseUrl = Get-AiWorkDefaultGatewayBaseUrl
+        }
+    }
     if (-not $ApiKey) { $ApiKey = Read-Host 'AI Work API Key（输入不会回显）' }
     Save-Config -BaseUrl $GatewayBaseUrl -PlainKey $ApiKey
 }

@@ -11,6 +11,10 @@ never written to the repository or command-line arguments. A CI/non-interactive
 install may provide `AIWORK_GATEWAY_BASE_URL` and `AIWORK_API_KEY` environment
 variables instead.
 
+The public Starlink Dimension Router base URL is `https://api.gemstory.cn/v1`;
+the installer uses it by default. Existing `www.gemstory.cn` settings are
+automatically redirected to the official `api.gemstory.cn` host at runtime.
+
 Use `doctor` to verify the gateway, API key, account pool, and video capability
 without creating a task. The gateway base URL is normalized to the public `/v1`
 API path; if `/admin` or `/admin/v1` is entered, it is corrected automatically.

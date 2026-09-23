@@ -26,6 +26,8 @@ MCP 的客户端（DSH / Claude Code / Codex / 其他）都能把 Seedance 当�
 
 先在本机跑一次 `install.cmd` 配置网关与 Key（写入 `%APPDATA%\AIWork\seedance-skill.json`，
 Key 经 Windows DPAPI 用户级加密）。**配置文件不进 yml**，所以凭据不会出现在任何仓库或配置里。
+星链维度分流系统的公网地址为 `https://api.gemstory.cn/v1`。旧配置中的
+`www.gemstory.cn` 会自动迁移到正式 API 域名；其他自定义网关不受影响。
 
 然后在 `~/.dsh/profiles/web-desktop/cordis.patch.yml` 追加一条（或用 设置 → 插件 里的
 MCP 管理界面填写），随后重载配置 / 重启服务生效：
@@ -64,7 +66,7 @@ DSH 会**清洗**掉名字匹配 `KEY|PASSWORD|SECRET|TOKEN` 的环境变量再�
 
 ```yaml
         env:
-          AIWORK_GATEWAY_BASE_URL: 'https://your-gateway.example.com/v1'
+          AIWORK_GATEWAY_BASE_URL: 'https://api.gemstory.cn/v1'
           AIWORK_API_KEY: !!js 'process.env.MY_AIWORK_KEY'
 ```
 
@@ -83,10 +85,11 @@ DSH 会**清洗**掉名字匹配 `KEY|PASSWORD|SECRET|TOKEN` 的环境变量再�
 ```powershell
 node mcp\smoke-test.mjs        # 协议、转义、目录形状、参数校验、runner 失败上抛
 node mcp\integration-test.mjs  # 本地假网关跑通 doctor→submit(双图)→wait→download→generate
+node mcp\gateway-config-test.mjs # 验证旧域名迁移及自定义网关保留
 ```
 
-两者都不建任务、不花积分，且刻意用**文件重定向**而不是管道做 stdio，
-因此在禁止匿名管道的受限环境里也能跑。
+三项测试都不调用真实网关、不创建视频任务、不消耗积分。MCP 的 smoke/integration
+测试刻意用**文件重定向**而不是管道做 stdio，因此在禁止匿名管道的受限环境里也能跑。
 
 ## Windows PowerShell 5.1 的三个硬约束（已由字节级实测确认）
 

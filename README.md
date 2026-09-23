@@ -17,6 +17,9 @@ cd skills/aiwork-seedance
 需要标准 MCP 接入的客户端，可使用 [`skills/aiwork-seedance/mcp/README.md`](skills/aiwork-seedance/mcp/README.md)
 中的 stdio 配置；它与脚本共用同一套网关配置。
 
+星链维度分流系统的公网地址为 `https://api.gemstory.cn/v1`。旧配置中的
+`https://www.gemstory.cn` 会在运行时自动迁移到正式 API 域名；其他自定义网关地址不变。
+
 ## 支持
 
 - Seedance 文生视频、图生视频、参考视频

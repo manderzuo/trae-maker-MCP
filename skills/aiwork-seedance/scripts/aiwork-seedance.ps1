@@ -28,6 +28,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'gateway-config.ps1')
 
 $script:ConfigPath = Join-Path (Join-Path $env:APPDATA 'AIWork') 'seedance-skill.json'
 $script:Config = $null
@@ -72,23 +73,7 @@ function Get-ConfiguredBaseUrl {
     if ([string]::IsNullOrWhiteSpace($value)) {
         throw '未配置 AIWORK_GATEWAY_BASE_URL；请运行 install.cmd。'
     }
-    try { $uri = [Uri]$value } catch { throw 'AIWORK_GATEWAY_BASE_URL 必须是 http/https 地址。' }
-    if (-not $uri.IsAbsoluteUri -or $uri.Scheme -notin @('http', 'https')) {
-        throw 'AIWORK_GATEWAY_BASE_URL 必须是 http/https 地址。'
-    }
-    $path = $uri.AbsolutePath.TrimEnd('/')
-    if ($path -in @('/admin', '/admin/v1')) {
-        $path = '/v1'
-    } elseif ([string]::IsNullOrWhiteSpace($path) -or $path -eq '/') {
-        $path = '/v1'
-    } elseif ($path -notmatch '/v1$') {
-        $path = "$path/v1"
-    }
-    $builder = [UriBuilder]$uri
-    $builder.Path = $path
-    $builder.Query = ''
-    $builder.Fragment = ''
-    return $builder.Uri.AbsoluteUri.TrimEnd('/')
+    return Normalize-AiWorkGatewayBaseUrl -BaseUrl $value
 }
 
 function Get-ConfiguredApiKey {
