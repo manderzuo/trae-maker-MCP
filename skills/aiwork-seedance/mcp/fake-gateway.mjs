@@ -37,12 +37,13 @@ export async function startFakeGateway({ port = 0, pollsBeforeComplete = 2, apiK
       });
       const json = (code, value) => {
         const payload = JSON.stringify(value);
-        res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(payload) });
+        // Match Core JSON responses: JSON is UTF-8 even without a charset.
+        res.writeHead(code, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) });
         res.end(payload);
       };
 
       if (req.method === 'GET' && req.url === '/health') {
-        json(200, { status: 'ok', accounts: 2, capabilities: ['seedance'] });
+        json(200, { status: 'ok', service: '星链维度分流系统', accounts: 2, capabilities: ['seedance'] });
         return;
       }
       if (!authorization.endsWith(apiKey)) {

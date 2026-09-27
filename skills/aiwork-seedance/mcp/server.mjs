@@ -16,8 +16,8 @@
  *    when the invocation is the LAST statement of -Command, where it does.
  *  - Array parameters only bind correctly through -Command `@('a','b')`;
  *    -File silently mis-binds comma lists and leaks extra tokens into positionals.
- *  - Output redirected to a file handle is UTF-8 on both stdout and stderr, so
- *    the runner's Chinese messages are read back with the .UTF-8 decoder.
+ *  - Output encoding must be explicit: headless Windows hosts do not
+ *    necessarily inherit the UTF-8 console used during development.
  */
 
 import { spawn } from 'node:child_process';
@@ -158,7 +158,7 @@ function buildCommand(action, params) {
   }
   // The runner invocation must stay the last statement: that is what makes a
   // non-zero process exit code observable (see the header notes).
-  const command = `$ErrorActionPreference='Stop'; ${parts.join(' ')}`;
+  const command = `$ErrorActionPreference='Stop'; $OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); ${parts.join(' ')}`;
   if (command.length > MAX_COMMAND_CHARS) {
     throw new ValidationError(`参数总长度超过 ${MAX_COMMAND_CHARS} 字符，请缩短提示词或减少素材数量。`);
   }
@@ -223,8 +223,8 @@ function classifyRunnerFailure(stderrText, stdoutText, code, action) {
  *
  * Child output goes to temp files instead of pipes: the values are read back
  * after exit, which keeps the bridge working in environments where spawning a
- * child with piped stdio is denied, and avoids any console codepage guesswork
- * (a redirected handle is UTF-8).
+ * child with piped stdio is denied. buildCommand explicitly selects UTF-8
+ * for redirected output rather than inheriting the host console codepage.
  */
 function runRunner(action, params, { timeoutSeconds = 120 } = {}) {
   return new Promise((resolve, reject) => {

@@ -93,7 +93,10 @@ function Get-CommonHeaders {
 }
 
 function Convert-ResponseBody($response) {
-    $raw = [string]$response.Content
+    # Windows PowerShell 5 decodes a charset-less JSON response as Latin-1.
+    # The gateway's JSON bytes are UTF-8; decode the original bytes, not the
+    # already corrupted Content string. ToArray does not consume the stream.
+    $raw = [Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray())
     if ([string]::IsNullOrWhiteSpace($raw)) { return [pscustomobject]@{} }
     try { return $raw | ConvertFrom-Json } catch { return [pscustomobject]@{ message = $raw.Substring(0, [Math]::Min(500, $raw.Length)) } }
 }

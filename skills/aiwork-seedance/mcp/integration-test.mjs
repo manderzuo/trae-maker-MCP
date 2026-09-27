@@ -69,6 +69,9 @@ function phase(label, messages, env) {
       stdio: [inFd, outFd, errFd],
       cwd: HERE,
       windowsHide: true,
+      // Agent hosts commonly have no UTF-8 console to inherit. Exercise that
+      // environment too, not only the encoding of the developer's terminal.
+      detached: process.platform === 'win32',
       env: { ...process.env, ...env },
     });
     child.on('error', reject);
@@ -122,6 +125,7 @@ try {
   check('doctor ok', doctor.ok === true, JSON.stringify(doctor).slice(0, 200));
   check('doctor reports the gateway', String(doctor.gateway).startsWith('http://127.0.0.1:'), doctor.gateway);
   check('health payload surfaced', doctor.health?.status === 'ok', JSON.stringify(doctor.health));
+  check('UTF-8 JSON without charset preserves Chinese service name', doctor.health?.service === '星链维度分流系统', JSON.stringify(doctor.health));
   check('no task created by doctor', ready.requests.every((r) => !String(r.path).includes('/videos/generations')));
 
   console.log('\n2. submit with two local images (array binding through the whole chain)');
