@@ -381,8 +381,13 @@ function submitParams(args) {
   const action = takeEnum(args, 'action', ['create', 'revise'], 'create');
   let context = '';
   if (args.work_context !== undefined) {
-    if (!isPlainObject(args.work_context) || Object.keys(args.work_context).some(k => !['work_id', 'base_version_id', 'context_handle'].includes(k))) throw new ValidationError('work_context 必须是明确的作业/父版本或句柄。');
-    context = JSON.stringify(Object.fromEntries(Object.keys(args.work_context).map(k => [k, takeString(args.work_context, k, { required: true, maxLength: 200 })])));
+    if (!isPlainObject(args.work_context) || Object.keys(args.work_context).some(k => !['work_id', 'base_version_id', 'context_handle', 'request_id', 'parent_version_id', 'reference_mode'].includes(k))) throw new ValidationError('work_context 必须是明确的作业/父版本或句柄。');
+    const selectors = {};
+    for (const k of ['work_id', 'base_version_id', 'context_handle']) {
+      if (args.work_context[k] !== undefined && args.work_context[k] !== null) selectors[k] = takeString(args.work_context, k, { required: true, maxLength: 200 });
+    }
+    if (!selectors.context_handle && (!selectors.work_id || !selectors.base_version_id)) throw new ValidationError('请提供明确 work_id/base_version_id 或 context_handle。');
+    context = JSON.stringify(selectors);
   }
   return [
     ['Prompt', takeString(args, 'prompt', { required: true, maxLength: MAX_PROMPT_CHARS })],
@@ -506,6 +511,7 @@ async function callWait(args, ctx) {
           task_id: taskId,
           status: recheck.status,
           finished: false,
+          work_context: recheck.work_context ?? null,
           waited_seconds: timeoutSeconds,
           note: `已等待 ${timeoutSeconds} 秒仍未完成，任务未被丢弃。请再次调用 seedance_wait 继续等待；不要重新提交。`,
         };
@@ -516,6 +522,7 @@ async function callWait(args, ctx) {
         finished: recheck.status === 'completed',
         content_url: recheck.content_url,
         error: recheck.error,
+        work_context: recheck.work_context ?? null,
         detail: recheck.detail,
       };
     }
@@ -560,6 +567,7 @@ async function callGenerate(args, ctx) {
       status: waited.status,
       finished: false,
       idempotency_key: submitted.idempotencyKey,
+      work_context: waited.work_context ?? submitted.work_context,
       note: `任务仍在进行（本次已等待 ${timeoutSeconds} 秒）。继续用 seedance_wait 跟进；同一 idempotency_key 重发本调用也安全，但不要用新键重新提交。`,
     };
   }
@@ -569,6 +577,7 @@ async function callGenerate(args, ctx) {
       status: waited.status,
       finished: true,
       error: waited.error ?? null,
+      work_context: waited.work_context ?? submitted.work_context,
       note: '任务已结束但未成功，没有生成视频文件。',
     };
   }
@@ -580,7 +589,7 @@ async function callGenerate(args, ctx) {
 
 const generationProperties = {
   action: { type: 'string', enum: ['create', 'revise'], description: '省略为独立生成；revise 需明确 work_context，省略规格继承父版本。' },
-  work_context: { type: 'object', properties: { work_id: { type: 'string', maxLength: 200 }, base_version_id: { type: 'string', maxLength: 200 }, context_handle: { type: 'string', maxLength: 200 } }, additionalProperties: false },
+  work_context: { type: 'object', properties: { work_id: { type: 'string', maxLength: 200 }, base_version_id: { type: ['string', 'null'], maxLength: 200 }, context_handle: { type: 'string', maxLength: 200 }, request_id: { type: 'string' }, parent_version_id: { type: ['string', 'null'] }, reference_mode: { type: 'string' } }, additionalProperties: false },
   prompt: { type: 'string', maxLength: MAX_PROMPT_CHARS, description: '视频生成提示词（必填）。' },
   image_paths: {
     type: 'array',

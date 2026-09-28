@@ -255,6 +255,9 @@ try {
   ], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
   check('revision submitted with owned explicit context', payload(p10.replies.get(2)).task_id && ready.state.submittedPayload?.action === 'revise' && ready.state.submittedPayload?.work_context?.base_version_id === 'version-fixture');
   check('revision does not reset inherited specifications', ready.state.submittedPayload?.action === 'revise' && !('duration' in ready.state.submittedPayload));
+  const echoedContext = { work_id: 'work-fixture', base_version_id: 'version-fixture', request_id: 'video-fake-001', parent_version_id: null, reference_mode: 'user_reference' };
+  const p11 = await phase('work-echoed-context', [rpc(1, 'initialize', { protocolVersion: '2025-06-18' }), rpc(2, 'tools/call', { name: 'seedance_submit', arguments: { prompt: '放慢速度', action: 'revise', work_context: echoedContext } })], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
+  check('complete returned metadata is accepted for revision without leaking internal fields', p11.replies.get(2)?.isError === false && ready.state.submittedPayload?.prompt === '放慢速度' && !('request_id' in ready.state.submittedPayload?.work_context));
 
   console.log('\n9. secret hygiene');
   check('API key never appears in any reply', !allReplyText.join('\n').includes(API_KEY));

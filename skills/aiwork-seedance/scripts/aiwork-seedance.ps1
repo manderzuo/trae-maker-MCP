@@ -271,6 +271,7 @@ function Submit-Task {
     if ($WorkAction -eq 'create' -or $script:ExplicitSpecFields -contains 'Resolution') { $payload.resolution = $Resolution }
     if ($WorkAction -eq 'create' -or $script:ExplicitSpecFields -contains 'Ratio') { $payload.ratio = $Ratio }
     if ($WorkContextJson) { $payload.work_context = $WorkContextJson | ConvertFrom-Json }
+    if ($WorkContextJson -and $WorkAction -eq 'create') { $payload.action = 'create' }
     if ($WorkAction -eq 'revise') {
         if (-not $WorkContextJson) { throw '改版必须提供明确作业上下文，不能猜测最近任务。' }
         $payload.action = $WorkAction
