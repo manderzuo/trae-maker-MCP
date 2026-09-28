@@ -373,15 +373,23 @@ async function fetchStatus(taskId, ctx) {
     content_url: contentUrlOf(task),
     error: errorOf(task),
     detail: task,
+    work_context: task?.work_context ?? raw?.work_context ?? null,
   };
 }
 
 function submitParams(args) {
+  const action = takeEnum(args, 'action', ['create', 'revise'], 'create');
+  let context = '';
+  if (args.work_context !== undefined) {
+    if (!isPlainObject(args.work_context) || Object.keys(args.work_context).some(k => !['work_id', 'base_version_id', 'context_handle'].includes(k))) throw new ValidationError('work_context 必须是明确的作业/父版本或句柄。');
+    context = JSON.stringify(Object.fromEntries(Object.keys(args.work_context).map(k => [k, takeString(args.work_context, k, { required: true, maxLength: 200 })])));
+  }
   return [
     ['Prompt', takeString(args, 'prompt', { required: true, maxLength: MAX_PROMPT_CHARS })],
-    ['Duration', takeInt(args, 'duration', { min: 2, max: 15, def: 5 })],
-    ['Resolution', takeEnum(args, 'resolution', RESOLUTIONS, '720p')],
-    ['Ratio', takeEnum(args, 'ratio', RATIOS, '16:9')],
+    ['Duration', takeInt(args, 'duration', { min: 2, max: 15, def: action === 'create' ? 5 : undefined })],
+    ['Resolution', takeEnum(args, 'resolution', RESOLUTIONS, action === 'create' ? '720p' : undefined)],
+    ['Ratio', takeEnum(args, 'ratio', RATIOS, action === 'create' ? '16:9' : undefined)],
+    ['WorkAction', action], ['WorkContextJson', context],
     ['ImagePath', takeList(args, 'image_paths')],
     ['VideoPath', takeList(args, 'video_paths')],
     ['ImageAssetId', takeList(args, 'image_asset_ids', { maxLength: 200 })],
@@ -400,7 +408,7 @@ async function submitOnce(params, ctx) {
   if (!taskId) {
     throw new RunnerError('网关未返回任务 ID。请先用 seedance_doctor 检查网关与额度；不要盲目重试扣费提交。', { action: 'submit' });
   }
-  return { taskId, idempotencyKey: result?.idempotency_key ?? null, status: String(result?.status ?? 'submitted') };
+  return { taskId, idempotencyKey: result?.idempotency_key ?? null, status: String(result?.status ?? 'submitted'), work_context: result?.work_context ?? null };
 }
 
 /* -------------------------------- tool handlers ---------------------------- */
@@ -431,11 +439,12 @@ async function callUpload(args, ctx) {
 
 async function callSubmit(args, ctx) {
   const params = submitParams(args);
-  const { taskId, idempotencyKey, status } = await submitOnce(params, ctx);
+  const { taskId, idempotencyKey, status, work_context } = await submitOnce(params, ctx);
   return {
     task_id: taskId,
     status,
     idempotency_key: idempotencyKey,
+    work_context,
     note: '任务已提交（本次调用只提交一次）。用 seedance_wait 或 seedance_status 跟进，completed 后 seedance_download 下载。',
   };
 }
@@ -444,6 +453,27 @@ async function callStatus(args, ctx) {
   const taskId = takeString(args, 'task_id', { required: true, maxLength: 200 });
   const { detail, ...rest } = await fetchStatus(taskId, ctx);
   return rest;
+}
+
+async function callContinue(args, ctx) {
+  const params = [
+    ['WorkId', takeString(args, 'work_id', { required: true, maxLength: 200 })],
+    ['BaseVersionId', takeString(args, 'base_version_id', { required: true, maxLength: 200 })],
+    ['Prompt', takeString(args, 'prompt', { required: true, maxLength: 12000 })],
+    ['Duration', takeInt(args, 'duration', { min: 4, max: 15 })],
+    ['Resolution', takeEnum(args, 'resolution', ['480p', '720p'])],
+    ['Ratio', takeEnum(args, 'ratio', RATIOS)],
+    ['ContinuationMode', takeEnum(args, 'continuation_mode', ['auto', 'tail_reference', 'native_first_frame', 'native_video_extend'], 'auto')],
+    ['IdempotencyKey', takeString(args, 'idempotency_key', { maxLength: 200 })],
+  ];
+  const result = await ctx.run('continue', params, SUBMIT_BUDGET_SECONDS);
+  const taskId = String(result?.task_id ?? '').trim();
+  if (!taskId) throw new RunnerError('续写未返回新任务编号；请查询原作业，不要盲目重复提交。', { action: 'continue' });
+  return { ...result, note: '已提交新片段。用 wait/status 查询此 task_id；完成后 download。tail_reference 是尾帧近似参考，不是原生视频延长。' };
+}
+
+async function callWorkStatus(args, ctx) {
+  return ctx.run('work-status', [['WorkId', takeString(args, 'work_id', { required: true, maxLength: 200 })]], 90);
 }
 
 async function callWait(args, ctx) {
@@ -463,6 +493,7 @@ async function callWait(args, ctx) {
       content_url: contentUrlOf(task),
       progress: task?.progress ?? null,
       detail: task,
+      work_context: task?.work_context ?? null,
     };
   } catch (error) {
     // A wait that ran out of budget is not a task failure. Re-check once so a
@@ -509,6 +540,7 @@ async function callDownload(args, ctx) {
     status: 'completed',
     local_path: destination,
     size_bytes: sizeBytes,
+    work_context: result?.work_context ?? null,
   };
 }
 
@@ -541,12 +573,14 @@ async function callGenerate(args, ctx) {
     };
   }
   const downloaded = await callDownload({ task_id: submitted.taskId, ...(outputPath ? { output_path: outputPath } : {}) }, ctx);
-  return { ...downloaded, finished: true, status: 'completed', idempotency_key: submitted.idempotencyKey };
+  return { ...downloaded, finished: true, status: 'completed', idempotency_key: submitted.idempotencyKey, work_context: downloaded.work_context ?? waited.work_context ?? submitted.work_context };
 }
 
 /* ------------------------------- tool catalog ------------------------------ */
 
 const generationProperties = {
+  action: { type: 'string', enum: ['create', 'revise'], description: '省略为独立生成；revise 需明确 work_context，省略规格继承父版本。' },
+  work_context: { type: 'object', properties: { work_id: { type: 'string', maxLength: 200 }, base_version_id: { type: 'string', maxLength: 200 }, context_handle: { type: 'string', maxLength: 200 } }, additionalProperties: false },
   prompt: { type: 'string', maxLength: MAX_PROMPT_CHARS, description: '视频生成提示词（必填）。' },
   image_paths: {
     type: 'array',
@@ -578,6 +612,21 @@ const generationSchema = {
 };
 
 const TOOLS = [
+  {
+    name: 'seedance_continue', title: '接续指定视频版本',
+    description: '从明确父版本尾帧提交新片段，会消耗积分；不重发父任务。省略规格继承原值。tail_reference 为近似参考，未经验证的原生模式会拒绝。',
+    inputSchema: { type: 'object', properties: {
+      work_id: { type: 'string', maxLength: 200 }, base_version_id: { type: 'string', maxLength: 200 }, prompt: { type: 'string', maxLength: 12000 },
+      duration: { type: 'integer', minimum: 4, maximum: 15 }, resolution: { type: 'string', enum: ['480p', '720p'] }, ratio: { type: 'string', enum: RATIOS },
+      continuation_mode: { type: 'string', enum: ['auto', 'tail_reference', 'native_first_frame', 'native_video_extend'] }, idempotency_key: { type: 'string', maxLength: 200 },
+    }, required: ['work_id', 'base_version_id', 'prompt'], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: callContinue,
+  },
+  {
+    name: 'seedance_work_status', title: '查看视频作业版本', description: '只读查询明确 work_id 的版本、父子关系和提帧状态；不生成视频、不扣费。',
+    inputSchema: { type: 'object', properties: { work_id: { type: 'string', maxLength: 200 } }, required: ['work_id'], additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }, handler: callWorkStatus,
+  },
   {
     name: 'seedance_doctor',
     title: '检查网关与凭据',

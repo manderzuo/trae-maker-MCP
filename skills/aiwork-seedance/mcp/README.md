@@ -19,6 +19,27 @@ MCP 的客户端（DSH / Claude Code / Codex / 其他）都能把 Seedance 当�
 | `seedance_wait` | 轮询 `GET /v1/videos/{id}` | 无 |
 | `seedance_download` | `GET /v1/videos/{id}/content` | 写本地 MP4，默认 Downloads |
 | `seedance_generate` | 以上编排 | 建任务 + 完成后自动下载 |
+| `seedance_continue` | `POST /v1/video-works/{work_id}/continue` | 从指定父版本提交一个新的片段 |
+| `seedance_work_status` | `GET /v1/video-works/{work_id}` | 只读查看版本与尾帧状态 |
+
+## 连续改版与续写
+
+升级后的 Core 开启作业上下文后，工具返回 `work_context`。改版时用
+`seedance_submit` / `seedance_generate`，传 `action: "revise"` 和原返回的
+`work_context`（明确 `work_id`、`base_version_id` 或 `context_handle`）。
+改版不填 duration/resolution/ratio 时由服务器继承父版本，不重置为创建默认值。
+独立新视频省略 action，保持旧客户端的 5 秒、720p、16:9 默认值。
+
+续写用 `seedance_continue`，必填 `work_id`、`base_version_id`、`prompt`。
+可选规格为 4–15 秒、480p/720p 和现有比例；省略即继承。返回的是**新的**
+`task_id`，随后照常 wait → download，默认保存本机 Downloads。
+`tail_reference` 使用上一版本尾帧作近似参考，输出独立片段，不保证严格首帧锁定，
+不自动拼接整段。未经上游契约验证的原生首帧/视频延长模式会拒绝。
+Core 未开启该功能时不会偷偷降为纯文字生成。
+
+脚本对应 `-Action continue -WorkId ... -BaseVersionId ... -Prompt ...` 和
+`-Action work-status -WorkId ...`。状态/等待/下载不提交新视频；同一续写重试必须
+保留 `idempotency_key`，不要因等待或下载失败创建新键。
 
 在 DSH 中以 `mcp__aiwork__seedance_submit` 这类名字出现（前缀由 `serverName` 决定）。
 

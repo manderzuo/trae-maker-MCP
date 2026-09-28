@@ -20,7 +20,7 @@ const MP4_STUB = Buffer.concat([
 
 export async function startFakeGateway({ port = 0, pollsBeforeComplete = 2, apiKey = 'test-key-only' } = {}) {
   const requests = [];
-  const state = { polls: 0, taskId: null, idempotencyKeys: [], assetCount: 0, assets: [], submittedPayload: null };
+  const state = { polls: 0, taskId: null, idempotencyKeys: [], assetCount: 0, assets: [], submittedPayload: null, continuedPayload: null };
 
   const server = http.createServer((req, res) => {
     const chunks = [];
@@ -76,8 +76,16 @@ export async function startFakeGateway({ port = 0, pollsBeforeComplete = 2, apiK
         try { parsed = JSON.parse(body); } catch { parsed = null; }
         state.taskId = 'video-fake-001';
         state.submittedPayload = parsed;
-        json(200, { data: { task: { id: state.taskId, status: 'queued' } } });
+        json(200, { data: { task: { id: state.taskId, status: 'queued' } }, work_context: { work_id: 'work-fixture', base_version_id: 'version-fixture' } });
         return;
+      }
+      if (req.method === 'POST' && req.url === '/v1/video-works/work-fixture/continue') {
+        if (!req.headers['idempotency-key']) { json(400, { error: { message: '缺少幂等键' } }); return; }
+        state.continuedPayload = JSON.parse(body);
+        json(202, { task: { id: 'video-fake-continued', status: 'queued' }, work_context: { work_id: 'work-fixture', base_version_id: 'version-fixture' } }); return;
+      }
+      if (req.method === 'GET' && req.url === '/v1/video-works/work-fixture') {
+        json(200, { work_id: 'work-fixture', versions: [{ version_id: 'version-fixture', state: 'completed' }] }); return;
       }
       const content = /^\/v1\/videos\/([^/]+)\/content$/.exec(req.url);
       if (req.method === 'GET' && content) {
@@ -90,6 +98,7 @@ export async function startFakeGateway({ port = 0, pollsBeforeComplete = 2, apiK
         state.polls += 1;
         const done = state.polls > pollsBeforeComplete;
         json(200, {
+          work_context: { work_id: 'work-fixture', base_version_id: 'version-fixture' },
           data: {
             task: {
               id: decodeURIComponent(status[1]),

@@ -72,10 +72,10 @@ check('empty returns null', parseRunnerJson('   ') === null);
 
 console.log('\n3. tool catalog shape');
 const tools = publicTools();
-check('seven tools exposed', tools.length === 7, `got ${tools.length}`);
+check('nine tools exposed', tools.length === 9, `got ${tools.length}`);
 check('every tool has description + inputSchema', tools.every((t) => t.description && t.inputSchema?.type === 'object'));
 check('tool names are snake_case and unique', new Set(tools.map((t) => t.name)).size === tools.length && tools.every((t) => /^seedance_[a-z_]+$/.test(t.name)));
-check('only read-only tools claim readOnlyHint', tools.filter((t) => t.annotations?.readOnlyHint).every((t) => ['seedance_doctor', 'seedance_status', 'seedance_wait'].includes(t.name)));
+check('only read-only tools claim readOnlyHint', tools.filter((t) => t.annotations?.readOnlyHint).every((t) => ['seedance_doctor', 'seedance_status', 'seedance_wait', 'seedance_work_status'].includes(t.name)));
 
 /* ------------------------------ protocol probe ----------------------------- */
 
@@ -128,7 +128,7 @@ child.on('close', (code) => {
   check('protocol version echoed', init?.protocolVersion === '2025-06-18', init?.protocolVersion);
   check('serverInfo present', init?.serverInfo?.name === 'aiwork-seedance');
   const listed = replies.get(2)?.tools ?? [];
-  check('tools/list returns 7 tools', listed.length === 7, `got ${listed.length}`);
+  check('tools/list returns 9 tools', listed.length === 9, `got ${listed.length}`);
 
   const doctor = replies.get(3);
   const doctorText = doctor?.content?.[0]?.text ?? '';

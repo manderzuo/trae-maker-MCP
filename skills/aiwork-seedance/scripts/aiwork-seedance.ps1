@@ -1,10 +1,17 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('doctor', 'upload', 'submit', 'status', 'wait', 'download', 'generate')]
+    [ValidateSet('doctor', 'upload', 'submit', 'status', 'wait', 'download', 'generate', 'continue', 'work-status')]
     [string]$Action = 'doctor',
     [string]$Prompt,
     [string]$TaskId,
+    [string]$WorkId,
+    [string]$BaseVersionId,
+    [ValidateSet('create', 'revise')]
+    [string]$WorkAction = 'create',
+    [string]$WorkContextJson,
+    [ValidateSet('auto', 'tail_reference', 'native_first_frame', 'native_video_extend')]
+    [string]$ContinuationMode = 'auto',
     [string[]]$ImagePath,
     [string[]]$VideoPath,
     [string[]]$ImageAssetId,
@@ -28,6 +35,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:ExplicitSpecFields = @($PSBoundParameters.Keys)
 . (Join-Path $PSScriptRoot 'gateway-config.ps1')
 
 $script:ConfigPath = Join-Path (Join-Path $env:APPDATA 'AIWork') 'seedance-skill.json'
@@ -218,6 +226,12 @@ function Get-Task([string]$Id) {
     $task = Get-PropertyValue $result 'task'
     $data = Get-PropertyValue $result 'data'
     $dataTask = Get-PropertyValue $data 'task'
+    $context = Get-PropertyValue $result 'work_context'
+    if ($context) {
+        foreach ($item in @($task, $dataTask, $data)) {
+            if ($null -ne $item) { $item | Add-Member -NotePropertyName work_context -NotePropertyValue $context -Force }
+        }
+    }
     if ($task) { return $task }
     if ($dataTask) { return $dataTask }
     if ($data) { return $data }
@@ -252,9 +266,14 @@ function Submit-Task {
     $payload = @{
         model = 'seedance'
         prompt = $Prompt.Trim()
-        duration = $Duration
-        resolution = $Resolution
-        ratio = $Ratio
+    }
+    if ($WorkAction -eq 'create' -or $script:ExplicitSpecFields -contains 'Duration') { $payload.duration = $Duration }
+    if ($WorkAction -eq 'create' -or $script:ExplicitSpecFields -contains 'Resolution') { $payload.resolution = $Resolution }
+    if ($WorkAction -eq 'create' -or $script:ExplicitSpecFields -contains 'Ratio') { $payload.ratio = $Ratio }
+    if ($WorkContextJson) { $payload.work_context = $WorkContextJson | ConvertFrom-Json }
+    if ($WorkAction -eq 'revise') {
+        if (-not $WorkContextJson) { throw '改版必须提供明确作业上下文，不能猜测最近任务。' }
+        $payload.action = $WorkAction
     }
     $imageIds = @()
     if ($ImageAssetId) { $imageIds += $ImageAssetId }
@@ -268,7 +287,20 @@ function Submit-Task {
     $result = Invoke-AiworkJson -Method POST -Uri (Get-ApiUri '/videos/generations') -Body $payload -ExtraHeaders @{ 'Idempotency-Key' = $key }
     $id = Get-TaskId $result
     if ([string]::IsNullOrWhiteSpace($id)) { throw "网关未返回任务 ID：$(Get-ErrorMessage $result)" }
-    return [pscustomobject]@{ task_id = $id; status = 'submitted'; idempotency_key = $key }
+    return [pscustomobject]@{ task_id = $id; status = 'submitted'; idempotency_key = $key; work_context = (Get-PropertyValue $result 'work_context') }
+}
+
+function Continue-Work {
+    if (-not $WorkId -or -not $BaseVersionId -or -not $Prompt) { throw '续写需要 WorkId、BaseVersionId、Prompt。' }
+    $payload = @{ base_version_id = $BaseVersionId; prompt = $Prompt.Trim(); continuation_mode = $ContinuationMode }
+    if ($script:ExplicitSpecFields -contains 'Duration') { if ($Duration -lt 4) { throw '续写时长必须为 4–15 秒。' }; $payload.duration = $Duration }
+    if ($script:ExplicitSpecFields -contains 'Resolution') { if ($Resolution -notin @('480p','720p')) { throw '续写仅支持 480p/720p。' }; $payload.resolution = $Resolution }
+    if ($script:ExplicitSpecFields -contains 'Ratio') { $payload.ratio = $Ratio }
+    $key = if ($IdempotencyKey) { $IdempotencyKey } else { "seedance-$([Guid]::NewGuid().ToString())" }
+    $result = Invoke-AiworkJson -Method POST -Uri (Get-ApiUri "/video-works/$([Uri]::EscapeDataString($WorkId))/continue") -Body $payload -ExtraHeaders @{ 'Idempotency-Key' = $key }
+    $id = Get-TaskId $result
+    if (-not $id) { throw '网关未返回续写任务编号；不要重复提交。' }
+    return [pscustomobject]@{ task_id = $id; status = 'submitted'; idempotency_key = $key; work_context = (Get-PropertyValue $result 'work_context') }
 }
 
 function Wait-Task([string]$Id) {
@@ -314,11 +346,16 @@ function Download-Task([string]$Id, [string]$Target) {
         Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
         throw "视频下载失败：$($_.Exception.Message)"
     }
-    return [pscustomobject]@{ task_id = $Id; status = 'completed'; download_path = $destination }
+    return [pscustomobject]@{ task_id = $Id; status = 'completed'; download_path = $destination; work_context = (Get-PropertyValue $task 'work_context') }
 }
 
 try {
     switch ($Action) {
+        'continue' { Write-Result (Continue-Work) }
+        'work-status' {
+            if (-not $WorkId) { throw 'work-status 需要 WorkId。' }
+            Write-Result (Invoke-AiworkJson -Method GET -Uri (Get-ApiUri "/video-works/$([Uri]::EscapeDataString($WorkId))"))
+        }
         'doctor' {
             $health = Invoke-AiworkJson -Method GET -Uri (Get-HealthUri)
             $models = Invoke-AiworkJson -Method GET -Uri (Get-ApiUri '/models')

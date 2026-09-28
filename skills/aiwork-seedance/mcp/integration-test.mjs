@@ -120,7 +120,7 @@ try {
     rpc(3, 'tools/call', { name: 'seedance_doctor', arguments: {} }),
   ], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
   check('bridge answered initialize', p1.replies.get(1)?.capabilities?.tools !== undefined);
-  check('7 tools listed', p1.replies.get(2)?.tools?.length === 7, p1.replies.get(2)?.tools?.length);
+  check('9 tools listed', p1.replies.get(2)?.tools?.length === 9, p1.replies.get(2)?.tools?.length);
   const doctor = payload(p1.replies.get(3));
   check('doctor ok', doctor.ok === true, JSON.stringify(doctor).slice(0, 200));
   check('doctor reports the gateway', String(doctor.gateway).startsWith('http://127.0.0.1:'), doctor.gateway);
@@ -229,7 +229,34 @@ try {
   check('replies carry their own ids', payload(p7.replies.get(2)).task_id === 'video-fake-001');
   check('unknown task still answers', p7.replies.has(4), JSON.stringify([...p7.replies.keys()]));
 
-  console.log('\n8. secret hygiene');
+  console.log('\n8. persistent work continuation and read-only status');
+  const paidBefore = ready.requests.filter(r => r.method === 'POST' && /generations|\/continue$/.test(r.path)).length;
+  const p8 = await phase('work-continue', [
+    rpc(1, 'initialize', { protocolVersion: '2025-06-18' }),
+    rpc(2, 'tools/call', { name: 'seedance_continue', arguments: { work_id: 'work-fixture', base_version_id: 'version-fixture', prompt: '接着向前走，雨夜不变', idempotency_key: 'continue-once' } }),
+  ], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
+  const continued = payload(p8.replies.get(2));
+  check('continue has a new task id, not its parent', continued.task_id === 'video-fake-continued', JSON.stringify(continued));
+  check('continue metadata survives the runner and MCP', continued.work_context?.work_id === 'work-fixture', JSON.stringify(continued));
+  check('exact parent and UTF-8 continuation prompt sent', ready.state.continuedPayload?.base_version_id === 'version-fixture' && ready.state.continuedPayload?.prompt === '接着向前走，雨夜不变');
+  check('omitted continuation specs inherit instead of reset', ready.state.continuedPayload && !('duration' in ready.state.continuedPayload) && !('resolution' in ready.state.continuedPayload) && !('ratio' in ready.state.continuedPayload));
+  check('continue submitted once with exact idempotency key', ready.requests.filter(r => /\/continue$/.test(r.path)).length === 1 && ready.requests.find(r => /\/continue$/.test(r.path))?.idempotencyKey === 'continue-once');
+  const p9 = await phase('work-read', [
+    rpc(1, 'initialize', { protocolVersion: '2025-06-18' }),
+    rpc(2, 'tools/call', { name: 'seedance_work_status', arguments: { work_id: 'work-fixture' } }),
+    rpc(3, 'tools/call', { name: 'seedance_status', arguments: { task_id: 'video-fake-continued' } }),
+  ], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
+  check('work status lists exact versions', payload(p9.replies.get(2)).versions?.[0]?.version_id === 'version-fixture');
+  check('task status keeps work context', payload(p9.replies.get(3)).work_context?.work_id === 'work-fixture');
+  check('read-only status never submits', ready.requests.filter(r => r.method === 'POST' && /generations|\/continue$/.test(r.path)).length === paidBefore + 1);
+  const p10 = await phase('work-revise', [
+    rpc(1, 'initialize', { protocolVersion: '2025-06-18' }),
+    rpc(2, 'tools/call', { name: 'seedance_submit', arguments: { prompt: '改为夜景，其他不变', action: 'revise', work_context: { work_id: 'work-fixture', base_version_id: 'version-fixture' } } }),
+  ], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
+  check('revision submitted with owned explicit context', payload(p10.replies.get(2)).task_id && ready.state.submittedPayload?.action === 'revise' && ready.state.submittedPayload?.work_context?.base_version_id === 'version-fixture');
+  check('revision does not reset inherited specifications', ready.state.submittedPayload?.action === 'revise' && !('duration' in ready.state.submittedPayload));
+
+  console.log('\n9. secret hygiene');
   check('API key never appears in any reply', !allReplyText.join('\n').includes(API_KEY));
   check('no Authorization header text in replies', !/Authorization|Bearer\s/i.test(allReplyText.join('\n')));
 } finally {
