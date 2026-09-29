@@ -36,7 +36,11 @@ MCP 的客户端（DSH / Claude Code / Codex / 其他）都能把 Seedance 当�
 可选规格为 4–15 秒、480p/720p 和现有比例；省略即继承。返回的是**新的**
 `task_id`，随后照常 wait → download，默认保存本机 Downloads。
 `tail_reference` 使用上一版本尾帧作近似参考，输出独立片段，不保证严格首帧锁定，
-不自动拼接整段。未经上游契约验证的原生首帧/视频延长模式会拒绝。
+不自动拼接整段。`auto` 在上游提供已验证的整段视频续写契约时优先选择
+`native_video_extend`，由 Core 自动读取指定父版本的完整 MP4，无需客户端再次上传。
+此模式仍输出独立的新片段，duration 是新增片段时长，不包含原片；不保证严格首帧锁定。
+整段视频读取/归属核验失败时直接停止，不静默降为尾帧或无素材生成。
+`native_first_frame` 仍未开放；旧服务没有整段续写能力时，auto 保持尾帧模式。
 Core 未开启该功能时不会偷偷降为纯文字生成。
 
 脚本对应 `-Action continue -WorkId ... -BaseVersionId ... -Prompt ...` 和

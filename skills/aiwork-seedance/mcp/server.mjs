@@ -482,7 +482,7 @@ async function callContinue(args, ctx) {
   const result = await ctx.run('continue', params, SUBMIT_BUDGET_SECONDS);
   const taskId = String(result?.task_id ?? '').trim();
   if (!taskId) throw new RunnerError('续写未返回新任务编号；请查询原作业，不要盲目重复提交。', { action: 'continue' });
-  return { ...result, note: '已提交新片段。用 wait/status 查询此 task_id；完成后 download。tail_reference 是尾帧近似参考，不是原生视频延长。' };
+  return { ...result, note: '续写请求已接收。用 wait/status 查询此 task_id；completed 后 download。auto 在上游能力已验证时优先使用整段父视频，tail_reference 使用尾帧近似参考；均返回独立新片段，不覆盖或自动拼接原片。' };
 }
 
 async function callWorkStatus(args, ctx) {
@@ -631,7 +631,7 @@ const generationSchema = {
 const TOOLS = [
   {
     name: 'seedance_continue', title: '接续指定视频版本',
-    description: '从明确父版本尾帧提交新片段，会消耗积分；不重发父任务。省略规格继承原值。tail_reference 为近似参考，未经验证的原生模式会拒绝。',
+    description: '从明确父版本续写新片段，会消耗积分但不重发父任务。auto 优先已验证的完整视频续写；tail_reference 为尾帧近似参考。时长是新增片段时长，省略规格继承父版本；不覆盖或自动拼接原片。严格首帧锁定未开放。',
     inputSchema: { type: 'object', properties: {
       work_id: { type: 'string', maxLength: 200 }, base_version_id: { type: 'string', maxLength: 200 }, prompt: { type: 'string', maxLength: 12000 },
       duration: { type: 'integer', minimum: 4, maximum: 15 }, resolution: { type: 'string', enum: ['480p', '720p'] }, ratio: { type: 'string', enum: RATIOS },
