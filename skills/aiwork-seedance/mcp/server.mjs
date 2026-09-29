@@ -281,11 +281,19 @@ function runRunner(action, params, { timeoutSeconds = 120 } = {}) {
     }
 
     try {
+      // A pwsh parent exports its PSModulePath through Node unchanged. Windows
+      // PowerShell may then load pwsh's Security type data twice and DPAPI
+      // reports a misleading credential error. Let the selected host construct
+      // its own built-in module path; leave gateway/credential variables intact.
+      const childEnv = { ...process.env };
+      for (const key of Object.keys(childEnv)) {
+        if (key.toLowerCase() === 'psmodulepath') delete childEnv[key];
+      }
       child = spawn(POWERSHELL, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], {
         cwd: path.dirname(RUNNER),
         stdio: ['ignore', outFd, errFd],
         windowsHide: true,
-        env: process.env,
+        env: childEnv,
       });
     } catch (error) {
       settle(() => reject(new RunnerError(`无法启动 PowerShell（${POWERSHELL}）：${error.message}`, { action })));

@@ -10,7 +10,7 @@
  *   node mcp/integration-test.mjs
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -258,6 +258,20 @@ try {
   const echoedContext = { work_id: 'work-fixture', base_version_id: 'version-fixture', request_id: 'video-fake-001', parent_version_id: null, reference_mode: 'user_reference' };
   const p11 = await phase('work-echoed-context', [rpc(1, 'initialize', { protocolVersion: '2025-06-18' }), rpc(2, 'tools/call', { name: 'seedance_submit', arguments: { prompt: '放慢速度', action: 'revise', work_context: echoedContext } })], { ...common, AIWORK_GATEWAY_BASE_URL: ready.baseUrl });
   check('complete returned metadata is accepted for revision without leaking internal fields', p11.replies.get(2)?.isError === false && ready.state.submittedPayload?.prompt === '放慢速度' && !('request_id' in ready.state.submittedPayload?.work_context));
+
+  console.log('\n8b. DPAPI credentials with a PowerShell 7 parent module path');
+  const nativeEnv = { ...process.env, FIXTURE_KEY: API_KEY };
+  for (const key of Object.keys(nativeEnv)) if (key.toLowerCase() === 'psmodulepath') delete nativeEnv[key];
+  const ps = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const makeSecret = '$ErrorActionPreference="Stop"; ConvertFrom-SecureString (ConvertTo-SecureString $env:FIXTURE_KEY -AsPlainText -Force)';
+  const encrypted = spawnSync(ps, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(makeSecret, 'utf16le').toString('base64')], { env: nativeEnv, windowsHide: true, encoding: 'utf8' });
+  if (encrypted.status !== 0) throw new Error('Cannot create isolated DPAPI fixture: ' + encrypted.stderr);
+  const appData = path.join(TMP, 'dpapi-profile');
+  fs.mkdirSync(path.join(appData, 'AIWork'), { recursive: true });
+  fs.writeFileSync(path.join(appData, 'AIWork', 'seedance-skill.json'), JSON.stringify({ gateway_base_url: ready.baseUrl, api_key_protected: encrypted.stdout.trim() }));
+  const parentModules = process.env.PSModulePath || process.env.PSMODULEPATH || '';
+  const p12 = await phase('dpapi-doctor', [rpc(1, 'initialize', { protocolVersion: '2025-06-18' }), rpc(2, 'tools/call', { name: 'seedance_doctor', arguments: {} })], { AIWORK_API_KEY: '', AIWORK_GATEWAY_BASE_URL: ready.baseUrl, APPDATA: appData, PSModulePath: parentModules });
+  check('DPAPI doctor works despite inherited parent modules', payload(p12.replies.get(2)).ok === true, payload(p12.replies.get(2))._raw);
 
   console.log('\n9. secret hygiene');
   check('API key never appears in any reply', !allReplyText.join('\n').includes(API_KEY));

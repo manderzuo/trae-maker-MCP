@@ -103,7 +103,8 @@ const inFd = fs.openSync(inPath, 'r');
 const outFd = fs.openSync(outPath, 'w');
 const errFd = fs.openSync(errPath, 'w');
 
-const child = spawn(process.execPath, [SERVER], { stdio: [inFd, outFd, errFd], cwd: HERE, windowsHide: true });
+const child = spawn(process.execPath, [SERVER], { stdio: [inFd, outFd, errFd], cwd: HERE, windowsHide: true,
+  env: { ...process.env, APPDATA: `${inPath}-empty-profile`, AIWORK_API_KEY: '', AIWORK_GATEWAY_BASE_URL: '' } });
 child.on('error', (error) => {
   console.error(`cannot spawn server: ${error.message}`);
   process.exit(1);
