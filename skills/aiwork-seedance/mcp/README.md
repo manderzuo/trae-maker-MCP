@@ -8,6 +8,8 @@ MCP 的客户端（DSH / Claude Code / Codex / 其他）都能把 Seedance 当�
 
 零依赖，只需 Windows 上已有的 Node（≥ 18，实测 v24）与 Windows PowerShell 5.1。
 
+从 PowerShell7 启动 MCP 时，服务会为子 PowerShell 重建模块搜索路径，避免混载7.x模块导致 Windows PowerShell5.1无法加载 DPAPI 凭据功能；不会改写 Key 或降为明文。更新本机技能后，客户端需重载 MCP 连接才能重新读取新增工具目录。
+
 ## 暴露的工具
 
 | 工具 | 网关请求 | 副作用 |
